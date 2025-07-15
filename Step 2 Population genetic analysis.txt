@@ -39,7 +39,6 @@ makeSymm <- function(m) {
   return(m)
 }
 result_full <- makeSymm(result_matrix)
-#diag(result_full) <- 2
 result_df <- as.data.frame(result_full)
 row.names(result_df) <- ids$V2
 colnames(result_df) <- ids$V2
