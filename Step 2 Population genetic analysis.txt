@@ -63,7 +63,7 @@ pca_plot_3d(eigenvector = eigvec, eigenvalue = eigval,
             pch = "table")
 			
 
-
+###step 5 θ, Fst
 
 
 
