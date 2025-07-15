@@ -1,6 +1,7 @@
 #####this script is the pipeline of SNP calling
 
 ##Step 1  mapping reads to reference genome using bwa-mem, and filter mapping results
+
 bwa mem -t 10 -M -Y -R "@RG\tID:Lotus01\tPL:DNBseq\tLB:LIBRARY\tSM:Lotus01" /mnt/sda_16t/gaozy/reference_genome/jelly_out_chr_pilon.fasta.rename.fa  Lotus01.fq.gz Lotus01.fq.gz > Lotus01.sam  
 
 for i in *.sam; do i=${i%.sam*};  samtools view  -@ 20  -bS -t /mnt/sda_16t/gaozy/reference_genome/jelly_out_chr_pilon.fasta.rename.fa.fai  ${i}.sam > ${i}.bam; done  
@@ -10,6 +11,7 @@ for i in *.bam; do i=${i%.bam*}; samtools sort -@ 10 -O bam -o ${i}.sort.bam  ${
 for i in *.sort.bam; do i=${i%.sort.bam*}; samtools index ${i}.sort.bam; done
 
 ##Step 2  detected SNP and combine all samples gvcf files by GATK
+
 for i in *.sort.bam; do i=${i%.sort.bam*}; java -Djava.io.tmpdir=tmp/ -Xmx10g -jar /mnt/sda_16t/gaozy/tools/picard.jar AddOrReplaceReadGroups I=${i}.sort.bam O=${i}.sort.added.bam SORT_ORDER=coordinate RGID=${i} RGLB=RNA RGPL=illumina RGPU=Hiseq RGSM=${i}; done
 
 for i in *.sort.added.bam; do i=${i%.sort.added.bam*}; java -Djava.io.tmpdir=tmp/ -Xmx10g -jar /mnt/sda_16t/gaozy/tools/picard.jar MarkDuplicates CREATE_INDEX=true REMOVE_DUPLICATES= false MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=8000 INPUT= ${i}.sort.added.bam OUTPUT=${i}.sort.added.dedup.bam METRICS_FILE=${i}.sort.added.dedup.metircs; done
@@ -22,7 +24,8 @@ ls *.gvcf.gz > z_gvcf.list
 
 /mnt/sda_16t/gaozy/tools/GATK/gatk-4.1.4.0/gatk --java-options "-Xmx32g -Djava.io.tmpdir=tmp/"  GenotypeGVCFs -R /mnt/sda_16t/gaozy/reference_genome/jelly_out_chr_pilon.fasta.rename.fa -V cohort.g.vcf.gz -O 125lotus.snp.vcf
 
-##Step 3  filter SNP and indel
+##Step 3  filter SNP
+
 perl /mnt/sda_16t/gaozy/codes/VCF_add_id.pl 125lotus.snp.vcf 125lotus.1SNPID.vcf
 
 vcftools --vcf 125lotus.1SNPID.vcf --max-missing 1 --min-alleles 2 --max-alleles 2 --remove-indels  --recode-INFO-all --recode --out 125lotus.1SNPID.2no_missindel
