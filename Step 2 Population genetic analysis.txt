@@ -1,5 +1,4 @@
 ###step 1 selected 4-fold degenerate synonymous sites (4DTv) 
-
 /mnt/sda_16t/gaozy/tools/reseqtools/iTools_Code/iTools Gfftools getCdsPep -Ref /mnt/sda_16t/gaozy/reference_genome/jelly_out_chr_pilon.fasta.rename.fa -Gff /mnt/sda_16t/gaozy/reference_genome_annotation/final_jelly_annotation_cds_exon.gff3 -4DSite -OutPut Nelumbo
 
 /mnt/sda_16t/gaozy/tools/reseqtools/iTools_Code/iTools Filetools SF -ID1 1,2 -ID2 1,2 -InFile1 Nelumbo.4Dsite.gz -InFile2 4NL_125Nn.1SNPID.2no_missindelnc.vcf > 4NL_125Nn.1SNPID.2no_missindelnc.overlap.vcf 
@@ -8,24 +7,20 @@ vcftools --vcf 4NL_125Nn.1SNPID.2no_missindelc.overlap.vcf  --recode --recode-IN
 
 
 ###step 2 Constructed phylogenetic tree
-
 python /mnt/sda_16t/gaozy/tools/vcf2phylip-2.0/vcf2phylip.py --input 4NL_125Nn.1SNPID.2no_missindelc.overlap.vcf 
 
 iqtree -s 4NL_125Nn.1SNPID.2no_missindelc.overlap.min4.phy -m MFP -redo -bb 1000 -nt AUTO -redo
 
 
 ###Step 3 Constructed genetic structure using Admixture
-
 /mnt/sda_16t/gaozy/tools/plink --file 125Nn.1SNPID.2no_missindelc.overlap.vcf.out  --make-bed --out 125Nn.1SNPID.2no_missindelc.overlap.vcf.out
 
 for K in $(seq 1 10); do admixture --cv 125Nn.1SNPID.2no_missindelc.overlap.vcf.out.bed $K | tee admixture/0.5log${K}.out; done
 
 grep -h CV log*.out
 
-###step 3 PCA analysis
-
+###step 4 PCA analysis
 /mnt/sda_16t/gaozy/tools/gcta_1.94.0beta/gcta64 --make-grm-gz --out 125Nn.1SNPID.2no_missindelc.overlap.GCTA --bfile 125Nn.1SNPID.2no_missindelc.overlap.vcf.out --autosome-num 8
-
 /data_280t/gaozy/tools/plink --file 125Nn.1SNPID.2no_missindelc.overlap.GCTA --pca 20  --allow-extra-chr  --out pca
 
 ## PCA plot in R  
