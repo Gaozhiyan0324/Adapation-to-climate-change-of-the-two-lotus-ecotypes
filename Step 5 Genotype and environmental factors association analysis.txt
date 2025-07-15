@@ -1,0 +1,195 @@
+###Step 1 Extraction of 19 bioclimatic factors for 125 lotus samples in R
+setwd("D:/Projects/125Lotus_GWAS/BIO1_BIO19/")
+
+##Load the climate files:
+files <- list.files("D:/Projects/125Lotus_环境气候GWAS/BIO1_BIO19/wc2.0_2.5m_bio", pattern='tif', full.names=TRUE)
+
+##Create a RasterStack using these files:
+install.packages("dismo")
+install.packages("rgdal", repos="http://R-Forge.R-project.org")
+library(dismo)
+bioclim2.5 <- stack(files)
+
+##You can get some information about the data structure:
+dim(bioclim2.5)
+bioclim2.5
+
+##Load 125 lotus accession location
+locs126 <- read.table("D:/Projects/125Lotus_环境气候GWAS/BIO1_BIO19/125Lotus_position.txt", sep="\t", header=T)
+
+##We will use the maptools package:
+install.packages("maptools", repos="http://R-Forge.R-project.org")
+library(maptools)
+
+##(you will see an error message saying that "rgeos" is not available, but you can ignore this message)
+data(wrld_simpl)
+
+#If you want to see how the samples are distributed you can plot them onto a map. This is also a good check to make sure that the coordinates in your file are defined correctly.
+plot(wrld_simpl, add=T)
+points(locs126[,2:3], col="red", cex=0.3)
+
+##plot BIO1-BIO19 PDF with 126 sample position
+pdf(file = "wc2.1_2.5m_bio_1.pdf",width = 5, height = 5)
+plot_BIO1 <- plot(bioclim2.5$wc2.1_2.5m_bio_1,main = "wc2.1_2.5m_bio_1", cex.axis=1,cex.lab=1,cex.main=1)
+plot(bioclim2.5, 1) #precip wettest qtr
+points(locs126[,2:3], col="red", cex=0.3, lwd = 0.5, pch = 16)
+dev.off()
+
+#Extract climate data for 125 lotus accessions:
+climate125 <- extract(bioclim2.5, locs125[,2:3])
+bioclim_names <- c("BIO1","BIO10","BIO11","BIO12","BIO13","BIO14","BIO15","BIO16","BIO17","BIO18","BIO19","BIO2","BIO3","BIO4","BIO5","BIO6","BIO7","BIO8","BIO9")
+colnames(climate126) <- bioclim_names
+write.table(as.matrix(climate126), file="125lotus_traits.txt", sep="\t", row.names=T)
+
+###Step 2 Pearson correlation analysis of 19 bioclimatic factors for 125 lotus samples in R
+library(tidyverse)
+library(GGally)
+library(ggplot2)
+library(gridExtra)
+library(rlang)
+library("Hmisc")
+library(raster) 
+library(sf) 
+library(ggspatial)
+
+data <- read.table("125lotus_traits.txt",header = T, stringsAsFactors = F, comment.char = "", row.names = 1)
+res2 <- rcorr(as.matrix(data))
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+  )
+}
+Trait_Cor <- flattenCorrMatrix(res2$r, res2$P)
+write.table(Trait_Cor, file = paste0(outfile, ".txt"), sep = "\t", quote = F, col.names = T, row.names = F)
+
+###Step 3 Gradient Forest
+##SNP prunning
+/mnt/sda_16t/gaozy/tools/plink --vcf 125lotus.1SNPID.2no_missindel.vcf  --indep-pairwise 100 50 0.8 -out 125lotus.1SNPID.2no_missindel.3LD.vcf --allow-extra-chr  --make-bed 
+
+/mnt/sda_16t/gaozy/tools/plink --extract 125lotus.1SNPID.2no_missindel.3LD.vcf.prune.in --make-bed --allow-extra-chr --out 125lotus.1SNPID.2no_missindel.3LD.4prune --recode vcf-iid --vcf 125lotus.1SNPID.2no_missindel.vcf
+
+perl /mnt/sda_16t/gaozy/tassel-5-standalone/run_pipeline.pl -Xmx12g -SortGenotypeFilePlugin -inputFile 125lotus.1SNPID.2no_missindel.3LD.4prune.vcf -outputFile 125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.vcf -fileType VCF
+
+##SNP genotype 0/1/2 in R
+vcf_data <- read.vcfR("125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.vcf")
+geno <- vcfR2genlight(vcf_data)
+gen_mat <- as.matrix(geno)
+gen_mat[is.na(gen_mat)] <- 0
+125samples_geno_data <- t(gen_mat)
+write.table(125samples_geno_data, "125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.geno.csv", row.names = TRUE)
+
+##Gradient Forest in R
+path<-"/mnt/sda_16t/gaozy/126lotus_climate/126lotus.snp.vcf/125sample/vcf_freq/"
+Gwifl<-read_csv(paste0(path,'125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.geno.csv'))
+Ewifl<-read_csv(paste0(path,'125lotus_longlat_19bioclimate.csv'))
+nSites<-125
+lev <- floor(log2(nSites*0.368/2))
+wiflforest <- gradientForest(
+  cbind(Ewifl, Gwifl),
+  predictor.vars = Ewifl %>% colnames(),
+  response.vars = Gwifl %>% colnames(),
+  ntree = 500,
+  transform = NULL,
+  compact = T,
+  corr.threshold=0.50,
+  maxLevel = lev,
+  trace = T
+)
+names(wiflforest)
+overall.imp <- wiflforest$overall.imp
+write.csv(overall.imp, "GF.overall_imp.csv", row.names = TRUE)
+
+#R2 weight importance
+importance_in_plot <- importance(wiflforest, type="Weighted")
+write.csv(importance_in_plot, "GF.overall_imp2_Weighted.csv", row.names = TRUE)
+
+#plot
+pdf(file="8sort.accuracy_importance.pdf",width = 6,height = 4)
+plot(wiflforest,plot.type="Overall.Importance")
+dev.off()
+
+
+###Step 4 Association between genetic variations and 19 bioclimatic factors in 125 lotus samples
+##LFMM in R
+install.packages("devtools")
+devtools::install_github("bcm-uga/lfmm")
+library(lfmm)
+library(adegenet)   
+library(vcfR) 
+library(dplyr)
+library(ggplot2)
+library(qvalue)
+
+##SNP genotype 0/1/2
+vcf_data <- read.vcfR("125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.vcf")
+geno <- vcfR2genlight(vcf_data)
+gen_mat <- as.matrix(geno)
+gen_mat[is.na(gen_mat)] <- 0
+125samples_geno_data <- t(gen_mat)
+write.table(125samples_geno_data, "125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.geno.txt", row.names = TRUE)
+
+Y<-read.table("125lotus.1SNPID.2no_missindel.3LD.4prune.8sort.geno.txt")
+X<-read.csv("125lotus_position_traits19ID.csv",header = F,stringsAsFactors = F)
+str(X) 
+str(Y)
+mod.lfmm <- lfmm_ridge(Y = Y, X = X, K = 6, lambda = 1e-05)
+pv <- lfmm_test(Y = Y, X = X, lfmm = mod.lfmm, calibrate = "gif")
+pvalues <- pv$calibrated.pvalue ##未矫正的pvalue
+pvalues <- as.matrix(pv$calibrated.pvalue)
+
+##adjusted pvalues
+my_qvalue <- function(x) {
+  q <- qvalue::qvalue(x)  
+  return(q)   
+}
+
+qvalues <- apply(pvalues, 2, my_qvalue)
+qvalues_df <- sapply(qvalues, function(x) x$qvalues)
+write.table(qvalues_df,file = "125samples_19factors.qvalues.txt",quote=F, sep="\t", row.names=FALSE, col.names=T)
+
+##QQ plot
+draw_qqplot <- function(pvals, title = "") {
+  observed <- -log10(sort(pvals))
+  expected <- -log10(ppoints(length(pvals))) 
+  plot(expected, observed,
+       main = title,
+       xlab = "Expected -log10(p)",
+       ylab = "Observed -log10(p)",
+       pch = 20, col = "#3F8EAA")
+  abline(0, 1, col = "#ED8F47", lty = 2)
+}
+
+##Manhattan plot
+traitID <- unique(mlm$Trait)
+for(tr in traitID){
+  outfile <- paste0(tr, "_mlm")
+  sub <- subset(mlm, Trait == tr)[,c(2:4,7)]
+  sub <- sub[-1,]
+  threshold <- -log10(1/ nrow(current_trait[!is.na(current_trait_1$p),]))
+  write.table(sub, file = paste0(outfile, ".txt"), sep = "\t", quote = F, col.names = T, row.names = F)
+  manhattanplot(mydata = paste0(outfile, ".txt"), key = outfile, chr = "all", columns = 2:4, thresholds = threshold, log10 = T, x_tick_labs = "Character")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

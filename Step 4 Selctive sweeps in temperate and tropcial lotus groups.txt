@@ -1,0 +1,220 @@
+### Step 1  Strong selective sweeps based on XP-CLR
+##Selective sweeps in temperate lotus group
+python /mnt/sda_16t/gaozy/tools/xpclr-master/bin/xpclr --out xpclr/chr1.trop_tem -Sa z_tropical.txt -Sb z_temperate.txt -I 125lotus.1SNPID.2no_missindel.vcf.gz -C chr1 --ld 0.95 --phased --maxsnps 200 --size 10000 --step 1000
+
+##Selective sweeps in tropical lotus group
+python /mnt/sda_16t/gaozy/tools/xpclr-master/bin/xpclr --out xpclr/chr1.tem_trop -Sa z_temperate.txt -Sb z_tropical.txt -I 125lotus.1SNPID.2no_missindel.vcf.gz -C chr1 --ld 0.95 --phased --maxsnps 200 --size 10000 --step 1000
+
+##Top 5% XP-CLR score
+awk -v total=$(($(wc -l < chr1_8.tem_trop.sort) - 1)) 'NR == 1 {print; next} NR-1 <= total * 0.05{print}' chr1_8.tem_trop.sort  > chr1_8.tem_trop.sort.5%
+
+##XP-CLR scores plot in R
+data <- read.table("chr1_8.tem_trop.xpclr",header = T)
+mycol1<-c("#C74D26","#E38D26","#F1CC74","#5EA7B8","#AED2E2","#B092B6","#CAC1D4","#A4C97C")
+
+CMplot(data, 
+       plot.type = 'm', 
+       LOG10 = FALSE, 
+       col = c("#C74D26", "#E38D26", "#F1CC74", "#5EA7B8", "#AED2E2", "#B092B6", "#CAC1D4", "#A4C97C"), 
+       ylab = "Xpclr_score", 
+	   width = 10,
+	   height = 5,
+	   file = "pdf",
+       signal.cex = 0.5,
+       ylim = c(0, 1000))  
+	   
+### Step 2  Strong selective sweeps based on Fst and θ in R
+rm(list=ls())
+
+library(tidyverse)
+theme_dendrogram <- function(){theme_bw() + 
+    theme(
+      legend.background = element_blank(),
+      panel.grid.minor = element_blank(), 
+      panel.grid.major = element_blank(),
+      panel.background = element_rect(fill = "white", colour = "white"),
+      panel.border = element_blank(),
+      axis.line = element_line(color = "black",size= 0.6), 
+      axis.ticks = element_line(color = "black",size = 0.6), 
+      axis.text = element_text(face="bold", color = "black", size=6)
+      )
+  }
+  
+pi_A <- read_table("Tropical.nomiss.windowed.pi")
+pi_B <- read_table("Temperate.nomiss.windowed.pi")
+fst <- read_table("Tropical_Temperate.windowed.weir.fst")
+pi <- pi_A %>% 
+  left_join(pi_B, by=c("CHROM", "BIN_START", "BIN_END")) %>% 
+  dplyr::rename(pi_A=PI.x, pi_B=PI.y) %>%
+  left_join(fst, by=c("CHROM", "BIN_START", "BIN_END")) %>%
+  select(-c("N_VARIANTS.x", "N_VARIANTS.y", "N_VARIANTS", "WEIGHTED_FST")) %>%
+  mutate(AVSB=pi_A/pi_B,
+         BVSA=pi_B/pi_A)
+
+fst95 <- quantile(pi$MEAN_FST, 0.95) 
+pi95 <-  quantile(pi$AVSB, 0.95, na.rm = TRUE) 
+pi05 <-  quantile(pi$AVSB, 0.05, na.rm = TRUE) 
+
+limit_x <- c(min(log2(pi$AVSB), na.rm=TRUE)*0.95, max(log2(pi$AVSB), na.rm=TRUE)*1.05)
+limit_y <- c(min(pi$MEAN_FST, na.rm=TRUE)*0.95, max(pi$MEAN_FST, na.rm=TRUE)*1.05)
+
+##Main plot
+p_main <- ggplot(pi, aes(x=log2(AVSB), y=MEAN_FST)) +
+  geom_point(
+    aes(
+      color=case_when(
+        log2(AVSB) > log2(pi95)  & MEAN_FST > fst95 ~ 'Selected region (B region)', 
+        log2(AVSB) < log2(pi05)  & MEAN_FST > fst95 ~ 'Selected region (A region)',
+        TRUE ~ 'Whole genome'
+      )
+    )
+  ) +
+  geom_vline(xintercept=log2(pi95), color='#4d4e4f', linetype="dashed", size=1.3) +
+  geom_vline(xintercept=log2(pi05), color='#4d4e4f', linetype="dashed", size=1.3) +
+  geom_hline(yintercept=fst95, color='#4d4e4f', linetype="dashed", size=1.3) +
+  lims(x=limit_x, y=limit_y) +
+  labs(x=expr(theta[pi]*"ratio("*pi[italic('A')]/pi[italic('B')]*")"),
+       y=expr(italic("F"["ST"]))) +
+  scale_color_manual('', values = c('Selected region (A region)'='#255fa7',
+                                    'Selected region (B region)'='#38823e',
+                                    'Whole genome'='grey66')) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = c(0.85, 0.9),
+        legend.background = element_blank(),
+		axis.line = element_line(linewidth = 1.3),
+		axis.text = element_text(size = 14),
+		panel.border = element_rect(color = "black", fill = NA, linewidth = 1.3))
+		
+pdf(file = "main_figure.TT2.Top05.log2.1.pdf", width = 8, height = 8)
+print(p_main)
+dev.off()
+
+##Right plot
+get_midpoint <- function(cut_label) {
+  tmp_lst <- strsplit(gsub("\\(|\\)|\\[|\\]", "", as.character(cut_label)), ",")
+  sapply(tmp_lst, function(x)mean(as.numeric(x)))
+}
+
+data_right <-pi %>%
+  mutate(cut_group = cut_width(MEAN_FST, width = 0.01)) %>% 
+  group_by(cut_group) %>%
+  summarize(counts=n()) %>%
+  mutate(prop=counts/sum(counts),
+         mid_pos=get_midpoint(as.character(cut_group))) %>%
+  mutate(plot_prop = 1/max(prop) * prop) 
+  
+max1<-max(data_right$prop)
+fst95_str <- as.character(round(fst95, 3))
+
+p_right <- ggplot(data_right) + 
+  stat_ecdf(data=pi, 
+            aes(y=MEAN_FST), 
+            geom="smooth", 
+            se=F, 
+            size=1,
+            color="#990099") +
+  geom_col(aes(y = mid_pos, 
+               x=plot_prop,
+               fill=ifelse(mid_pos>fst95,
+                           'selected',
+                           'other')
+               ), 
+           orientation = 'y') + 
+  geom_hline(yintercept=fst95, color='#4d4e4f', linetype="dashed", size=1) +
+  lims(y=limit_y) +
+  scale_x_continuous("Cumulative (%)", 
+                     labels = scales::percent_format(suffix = ''),
+                     position = "top",
+                     sec.axis = sec_axis(~.*max1,
+                                         name="Frequency (%)",
+                                         labels = scales::percent_format(suffix = ''))
+                     ) +
+  scale_fill_manual('', 
+                    values = c('selected'= '#F58A3E','other'='grey66'),
+                    labels = c('selected'= expr(italic("F"["ST"])>!!fst95_str),
+                               'other'=expr(italic("F"["ST"])<=!!fst95_str)
+                               )
+                    ) +
+  theme_dendrogram() +
+  theme(axis.title.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.line.y = element_blank(),
+        legend.position = c(0.50, 0.80))
+		
+pdf(file = "main_right.TT2.Top5.log2.1.pdf", width = 3, height = 8)
+print(p_right)
+dev.off()
+
+
+##up-plot
+data_top <-pi %>%
+  mutate(cut_group = cut_width(log(AVSB), width = 0.01)) %>% 
+  group_by(cut_group) %>%
+  summarize(counts=n()) %>%
+  mutate(prop=counts/sum(counts),
+         mid_pos=get_midpoint(as.character(cut_group))) %>%
+  mutate(plot_prop = 1/max(prop) * prop)
+
+max2<-max(data_top$prop)
+pi95_str <- as.character(round(log2(pi95), 3))
+pi05_str <- as.character(round(log2(pi05), 3))
+
+
+p_top <- ggplot(data_top) + 
+  stat_ecdf(data = pi, 
+    aes(x = log2(AVSB)), 
+    geom = "smooth", 
+    se = F, 
+    size = 1,
+    color = "#990099") +
+  geom_col(aes(x = mid_pos, 
+							y = plot_prop,
+							fill = case_when(
+							mid_pos > log2(pi95) ~ 'selectedB', 
+							mid_pos < log2(pi05) ~ 'selectedA',
+							TRUE ~ 'other'
+      )
+    )
+  ) + 
+  geom_vline(xintercept = log2(pi95), color = '#4d4e4f', linetype = "dashed", size = 1.3
+ ) +
+  geom_vline(xintercept = log2(pi05), color = '#4d4e4f', linetype = "dashed", size = 1.3
+  ) + 
+  lims(x = limit_x) +
+  scale_y_continuous("Cumulative (%)", 
+    labels = scales::percent_format(suffix = ''),
+    position = "right",
+    sec.axis = sec_axis(~ . * max2,
+      name = "Frequency (%)",
+      labels = scales::percent_format(suffix = ''))
+  ) +
+  scale_fill_manual('', 
+    values = c(
+      'selectedA' = '#336469',
+      'selectedB' = '#b86142',
+      'other' = 'grey'
+    ),
+    labels = c(
+      'selectedA' = expr(theta[pi]*"ratio" <= !!pi05_str),
+      'selectedB' = expr(theta[pi]*"ratio" >= !!pi95_str),
+      'other' = expr(!!pi05_str < theta[pi]*"ratio < "*!!pi95_str)
+    )
+  ) +
+  theme_dendrogram() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    legend.position = c(0.85, 0.35)
+  )
+		
+pdf(file = "main_upper.TT2.Top5.log2.1.pdf", width = 8, height = 3)
+print(p_top)
+dev.off()
+
+
+
+
