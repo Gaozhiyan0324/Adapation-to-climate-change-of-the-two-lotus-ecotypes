@@ -1,5 +1,5 @@
 # Adaptation to climate change of the two lotus ecotypes 
-This is the script used for analysis the population data of lotus, youcan see the detail information in the following files.
+This is the script used for analysis the population data of lotus, you can see the detail information in the following files.
 
 
 Step 1, SNP calling pipeline
