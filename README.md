@@ -5,8 +5,6 @@ This is the script used for analysis the population data of lotus, youcan see th
 Step 1, SNP calling pipeline
 
 
-
-
 Step 2, Population genetic analysis
 
 
