@@ -14,7 +14,7 @@ Step 3, CNV and non-CNV SNPs analysis
 Step 4, Selctive sweeps in temperate and tropcial lotus groups
 
 
-Step 5, Genotype and bioclimatic variables association analysis
+Step 5, Genetic variations and 19 bioclimatic variables association analysis
 
 
 
